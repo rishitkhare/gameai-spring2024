@@ -1,11 +1,11 @@
-globals [ message-patch pot-patch deck ranks suits total-pot round-pot current-bet names ]
+globals [ message-patch pot-patch deck ranks suits current-bet names game-complete? ]
 
 breed [ players player ]
 breed [ cards card ]
 breed [ chips chip ]
 
 cards-own [ suit rank owner opp-can-see? player-can-see? ]
-players-own [ name money bet folded? called? raised? ]
+players-own [ name bet bet? folded? called? raised? ]
 chips-own [ owner in-round? ]
 
 
@@ -13,6 +13,11 @@ chips-own [ owner in-round? ]
 to-report second [multi-item-list]
   report first butfirst multi-item-list
 end
+
+to-report third [multi-item-list]
+  report item 2 multi-item-list
+end
+
 
 to-report flatten [a-list]
   if not is-list? a-list [ report (list a-list) ]
@@ -186,13 +191,14 @@ end
 
 
 to reset-game
+  set game-complete? false
   ask cards [ die ]
-  ask patches [ set plabel "" ]
+  ask patches [ set plabel "" set pcolor white ]
   create-deck-of-cards
+  reset-round
   ask players [
     set folded? false
-    set called? false
-    set raised? false
+    set label name
     let counter 0
     ask n-of 5 cards with [ owner = nobody ] [
       set owner myself
@@ -208,11 +214,11 @@ to reset-game
       set pcolor grey + 3.5
     ]
   ]
+  ask chips [ set in-round? false ]
 end
 
 to init-player
   set label-color black
-  set money 100
   set name item (who mod num-players) names
   move-to pot-patch
   set heading (who mod num-players) * (360 / num-players)
@@ -249,19 +255,22 @@ end
 
 to bet-start
   let my-chips chips with [ owner = myself ]
-  ask n-of random (count my-chips / 2) my-chips [ chip-bet ]
+  ask n-of random (count my-chips / 8) my-chips [ chip-bet ] ;; todo
+  set bet? true
   print (word name " bets: " bet)
 end
 
 to bet-call
   set called? true
   let pot-call max [bet] of players with [ not folded? and any? chips with [in-round?] ]
-  let my-already-bet count chips with [ owner = myself and in-round? ]
-  let my-max-bet  count chips with [ owner = myself ]
-  ifelse pot-call > my-max-bet [ bet-fold ]
-  [
-    ask n-of (my-max-bet - my-already-bet) chips with [owner = myself  and not in-round?] [
-      chip-bet
+  if pot-call != bet [
+    let my-max-bet count chips with [ owner = myself ]
+    ifelse pot-call > my-max-bet [ bet-fold ]
+    [
+      let my-already-bet count chips with [ owner = myself and in-round? ]
+      ask n-of (pot-call - my-already-bet) chips with [owner = myself and not in-round?] [
+        chip-bet
+      ]
     ]
   ]
   print (word name " calls: " bet)
@@ -271,68 +280,124 @@ to bet-fold
   print (word name " folds")
   set folded? true
   set bet 0
-  ask chips with [ owner = myself ] [
+  ask chips with [ in-round? and owner = myself ] [
     set owner pot-patch
+    set in-round? false
+  ]
+  ask cards with [ owner = myself ] [
+    set pcolor grey
+    set player-can-see? true
   ]
 end
 
-to bet-raise
-  print (word name " raises: " bet)
+to bet-raise [ amount ]
+  set raised? true
+  let pot-call max [bet] of players with [ not folded? and any? chips with [in-round?] ]
+  let my-max-bet count chips with [ owner = myself ]
+  if pot-call > my-max-bet [ bet-fold ]
+  if pot-call = my-max-bet [ bet-call ]
+  if pot-call < my-max-bet [
+    let my-already-bet count chips with [ owner = myself and in-round? ]
+    ifelse (amount + my-already-bet) <= my-max-bet [
+      ask n-of amount chips with [owner = myself and not in-round?] [ ;; todo
+        chip-bet
+      ]
+      print (word name " raises: " bet)
+    ] [
+      print (word name ": raised too much" )
+      bet-call
+    ]
+  ]
+
 end
 
 to do-bet ;; player ;; TODO
   if not folded? [
     let my-chips chips with [ owner = myself ]
-    if any? chips with [ in-round? and owner = myself ] [ bet-call ]
-    ifelse not called? and any? chips with [ in-round? ] ;; betting has started
+    let bettors players with [ not folded? and any? (chips with [in-round?]) ]
+    ifelse any? bettors ;; betting has started
     [ ;; raise, call, fold
-      let bettors players with [ not folded? and any? chips with [in-round?] ]
-      let current-bets [bet] of bettors
-      if max current-bet > count my-chips [ bet-fold ]
-
-      set money money - bet
-      set round-pot round-pot + bet
+      let current-max-bet max [bet] of bettors
+      ifelse (current-max-bet > count my-chips) [ bet-fold ] [
+        ;; YOU PUT SOMETHING HERE
+        let my-choice random 10
+;        if my-choice = 0 [ bet-fold ]
+        if my-choice = 0 [ bet-raise 1 ]
+        if my-choice > 0 [ bet-call ]
+      ]
     ] [ ;; betting
       bet-start
     ]
   ]
 end
 
-to do-betting
-  ask players [ do-bet ]
-  ask pot-patch [ set plabel round-pot ]
+to-report winning-player
+   report min-one-of players with [not folded?] [
+    (1000 * second evaluate-my-full-hand - third evaluate-my-full-hand)
+  ]
 end
 
+
 to complete-game
-  ask players [ set label (word name "[" money "]\n" first evaluate-my-full-hand )]
-  let winner min-one-of players [ second evaluate-my-full-hand ]
-  ask winner [  set money money + total-pot ]
+  ask players [ set label (word name ":\n" first evaluate-my-full-hand )]
+  let winner winning-player
+  ask winner [
+    ask chips with [ owner = pot-patch ] [
+      set owner winner
+      move-to winner
+      rt random 360 fd random-float 1
+    ]
+  ]
+  ask chips [ set in-round? false ]
   ask message-patch [ set plabel (word [name] of winner " wins") ]
-  set round-pot 0
-  set total-pot 0
+  set game-complete? true
 end
 
 to-report game-over?
-  report not any? cards with [ not hidden? and not opp-can-see? and not player-can-see? ]
+  report (not any? cards with [ not hidden? and not opp-can-see? and not player-can-see? ])
+         or (2 > count players with [ not folded? ])
 end
 
-to-report step
-  set total-pot total-pot + round-pot
-  set round-pot 0
+to reset-round
   set current-bet 0
-  if game-over? [
-    complete-game
-    report false
+  ask players [
+    set called? false
+    set raised? false
+    set bet 0
+    set bet? false
   ]
-  do-betting
-  ask players [ flip-random-card-up ]
-  report true
+  ask chips with [ in-round? ] [
+    set in-round? false
+    set owner pot-patch
+    move-to owner
+    rt random 360
+    fd random-float 1.5
+  ]
+end
+
+
+to do-round
+  let current-active-players players with [ bet? or called? or raised? ]
+  if not any? current-active-players [ reset-round ]
+  foreach sort [self] of players with [ not folded? ] [ p ->
+    ask p [ do-bet ]
+;    wait 0.1
+  ]
+  if (all? players [ folded? or called? ]) [
+    ifelse not game-over? [
+      ask players with [not folded?] [ flip-random-card-up ]
+      reset-round
+    ] [
+      complete-game
+    ]
+  ]
 end
 
 to go
-  reset-game
-  while [ step ] [ ]
-
+  ifelse game-complete? [
+    if count players with [ count chips with [ owner = myself ] > 2 ] < 2 [ stop ]
+    reset-game
+  ] [ ifelse game-over? [ complete-game ] [ do-round ] ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -386,24 +451,7 @@ BUTTON
 89
 NIL
 go
-NIL
-1
 T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-20
-91
-125
-124
-NIL
-show step
-NIL
 1
 T
 OBSERVER
