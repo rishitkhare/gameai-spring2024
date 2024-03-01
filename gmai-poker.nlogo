@@ -1,12 +1,14 @@
-globals [ deck ranks suits ]
+globals [ message-patch pot-patch deck ranks suits total-pot round-pot current-bet names ]
 
 breed [ players player ]
 breed [ cards card ]
-cards-own [ suit rank owner opp-can-see? player-can-see? ]
+breed [ chips chip ]
 
-to-report is-flush? [ hand-of-cards ]
-  report 1 = length remove-duplicates [ suit ] of hand-of-cards
-end
+cards-own [ suit rank owner opp-can-see? player-can-see? ]
+players-own [ name money bet folded? called? raised? ]
+chips-own [ owner in-round? ]
+
+
 
 to-report second [multi-item-list]
   report first butfirst multi-item-list
@@ -17,18 +19,28 @@ to-report flatten [a-list]
   if empty? a-list [ report [] ]
   if not is-list? first a-list [ report fput (first a-list) flatten (butfirst a-list) ]
   if empty? first a-list [ report flatten butfirst a-list ]
-  report se (flatten first first a-list) se (flatten butfirst first a-list) flatten butfirst a-list
+  report se (flatten first first a-list) (se (flatten butfirst first a-list) (flatten butfirst a-list))
+end
+
+to-report has-card? [ card-name hand-of-cards ]
+  report member? card-name [first rank] of hand-of-cards
+end
+
+to-report max-card-of [ some-cards ]
+  report (50 - max flatten [second rank] of some-cards)
+end
+
+to-report is-flush? [ hand-of-cards ]
+  report 1 = length remove-duplicates [ suit ] of hand-of-cards
 end
 
 to-report is-straight? [ hand-of-cards ]
-  let has-ace? member? "ace" [first rank] of hand-of-cards
   let sr sort flatten [second rank] of hand-of-cards
   let num-cards length sr
 
   let seq-diff (map - (sublist sr 0 (num-cards - 1)) (sublist sr 1 num-cards))
 
-  if has-ace? [
-
+  if has-card? "ace" hand-of-cards [
     if (item 0 seq-diff = -1) [ set seq-diff sublist seq-diff 0 (length seq-diff - 1) ]
     if (last seq-diff = -1) [ set seq-diff sublist seq-diff 1 length seq-diff ]
   ]
@@ -43,7 +55,7 @@ end
 
 to-report is-royal-flush? [ hand-of-cards ]
   let card-names [first rank] of hand-of-cards
-  report is-straight-flush? hand-of-cards and member? "ace" card-names and member? "king" card-names
+  report is-straight-flush? hand-of-cards and has-card? "ace" hand-of-cards and has-card? "king" hand-of-cards
 end
 
 to-report is-three-of-a-kind? [ hand-of-cards ]
@@ -51,14 +63,26 @@ to-report is-three-of-a-kind? [ hand-of-cards ]
   report member? 3 map second list-counter card-names
 end
 
+to-report max-three-of-a-kind [ hand-of-cards ]
+  report max flatten filter [ x -> second x = 3 ] list-counter [rank] of hand-of-cards
+end
+
 to-report is-four-of-a-kind? [ hand-of-cards ]
   let card-names [first rank] of hand-of-cards
   report member? 4 map second list-counter card-names
 end
 
+to-report max-four-of-a-kind [ hand-of-cards ]
+  report max flatten filter [ x -> second x = 4 ] list-counter [rank] of hand-of-cards
+end
+
 to-report is-two-pair? [ hand-of-cards ]
   let card-names [first rank] of hand-of-cards
   report member? 2 (map second list-counter (map second list-counter card-names))
+end
+
+to-report max-pair [ hand-of-cards ]
+  report max flatten filter [ x -> second x = 2 ] list-counter [rank] of hand-of-cards
 end
 
 to-report is-pair? [ hand-of-cards ]
@@ -83,18 +107,22 @@ to-report list-counter [ a-list ]
   report output
 end
 
-to-report evaluate-full-hand [ hand-of-cards ]
-  let max-card (24 - max flatten [second rank] of hand-of-cards)
+to-report evaluate-full-hand [ hand-of-cards ] ; lower is better
+  let max-card max-card-of hand-of-cards
   if is-royal-flush? hand-of-cards [ report (list "royal flush" 0 max-card ) ]
   if is-straight-flush? hand-of-cards [ report (list  "straight flush" 1 max-card ) ]
-  if is-four-of-a-kind? hand-of-cards [ report (list  "4 of a kind" 2 max-card ) ]
-  if is-full-house? hand-of-cards [ report (list  "full house" 3 max-card ) ]
+  if is-four-of-a-kind? hand-of-cards [ report (list  "4 of a kind" 2 max-four-of-a-kind hand-of-cards ) ]
+  if is-full-house? hand-of-cards [ report (list  "full house" 3 max-three-of-a-kind hand-of-cards ) ]
   if is-flush? hand-of-cards [ report (list  "flush" 4 max-card ) ]
   if is-straight? hand-of-cards [ report (list  "straight" 5 max-card ) ]
-  if is-three-of-a-kind? hand-of-cards [ report (list  "3 of a kind" 6 max-card ) ]
-  if is-two-pair? hand-of-cards [ report (list  "two pair" 7 max-card ) ]
-  if is-pair? hand-of-cards [ report (list  "one pair" 8 max-card ) ]
+  if is-three-of-a-kind? hand-of-cards [ report (list  "3 of a kind" 6 max-three-of-a-kind hand-of-cards ) ]
+  if is-two-pair? hand-of-cards [ report (list  "two pair" 7 max-pair hand-of-cards ) ]
+  if is-pair? hand-of-cards [ report (list  "one pair" 8 max-pair hand-of-cards ) ]
   report (list "high card" max-card max-card)
+end
+
+to-report evaluate-my-full-hand ;; player
+  report evaluate-full-hand cards with [ owner = myself ]
 end
 
 to-report evaluate-partial-hand [ hand-of-cards ]
@@ -104,7 +132,8 @@ end
 
 to create-deck-of-cards
   set suits [ "heart" "club" "diamond" "spade" ]
-  set ranks sentence (n-values 9 [ i -> (list (word (i + 2)) (list (i + 2)))]) [["jack" [11]] ["queen" [12]] ["king" [13]] ["ace" [1 14]]]
+  set ranks sentence (n-values 9 [ i -> (list (word (i + 2)) (list (i + 2)))])
+                     [["jack" [11]] ["queen" [12]] ["king" [13]] ["ace" [1 14]]]
   foreach suits [ s ->
     foreach ranks [ r ->
       create-cards 1 [
@@ -158,8 +187,12 @@ end
 
 to reset-game
   ask cards [ die ]
+  ask patches [ set plabel "" ]
   create-deck-of-cards
   ask players [
+    set folded? false
+    set called? false
+    set raised? false
     let counter 0
     ask n-of 5 cards with [ owner = nobody ] [
       set owner myself
@@ -177,56 +210,141 @@ to reset-game
   ]
 end
 
+to init-player
+  set label-color black
+  set money 100
+  set name item (who mod num-players) names
+  move-to pot-patch
+  set heading (who mod num-players) * (360 / num-players)
+  set color item (2 + who mod num-players) base-colors
+  fd max-pxcor - 4
+  hatch-chips 20 [
+    set size 0.2
+    set color blue
+    rt random 360 fd random-float 0.2
+    set owner myself
+    set in-round? false
+  ]
+end
+
 to setup
   ca
-  ask patches [ set pcolor white ]
+  ask patches [ set pcolor white set plabel-color black ]
+  set message-patch patch 0 min-pycor
+  set pot-patch patch 0 1
   set-default-shape players "circle"
   set-default-shape cards "cardback"
-  let num-players 3
-  create-players num-players [
-    set label-color black
-    set heading (who mod num-players) * (360 / num-players)
-    fd max-pxcor - 4
-  ]
+  set-default-shape chips "wheel"
+  set names shuffle [ "alice" "bob" "charlie" "danny" "elissa" ]
+  create-players num-players [  init-player  ]
   reset-game
 end
 
+to chip-bet ;; chip
+  set in-round? true
+  set heading towards pot-patch
+  fd 1
+  ask owner [ set bet bet + 1 ]
+end
+
+to bet-start
+  let my-chips chips with [ owner = myself ]
+  ask n-of random (count my-chips / 2) my-chips [ chip-bet ]
+  print (word name " bets: " bet)
+end
+
+to bet-call
+  set called? true
+  let pot-call max [bet] of players with [ not folded? and any? chips with [in-round?] ]
+  let my-already-bet count chips with [ owner = myself and in-round? ]
+  let my-max-bet  count chips with [ owner = myself ]
+  ifelse pot-call > my-max-bet [ bet-fold ]
+  [
+    ask n-of (my-max-bet - my-already-bet) chips with [owner = myself  and not in-round?] [
+      chip-bet
+    ]
+  ]
+  print (word name " calls: " bet)
+end
+
+to bet-fold
+  print (word name " folds")
+  set folded? true
+  set bet 0
+  ask chips with [ owner = myself ] [
+    set owner pot-patch
+  ]
+end
+
+to bet-raise
+  print (word name " raises: " bet)
+end
+
+to do-bet ;; player ;; TODO
+  if not folded? [
+    let my-chips chips with [ owner = myself ]
+    if any? chips with [ in-round? and owner = myself ] [ bet-call ]
+    ifelse not called? and any? chips with [ in-round? ] ;; betting has started
+    [ ;; raise, call, fold
+      let bettors players with [ not folded? and any? chips with [in-round?] ]
+      let current-bets [bet] of bettors
+      if max current-bet > count my-chips [ bet-fold ]
+
+      set money money - bet
+      set round-pot round-pot + bet
+    ] [ ;; betting
+      bet-start
+    ]
+  ]
+end
+
 to do-betting
-  print "unimplemented"
+  ask players [ do-bet ]
+  ask pot-patch [ set plabel round-pot ]
 end
 
 to complete-game
+  ask players [ set label (word name "[" money "]\n" first evaluate-my-full-hand )]
+  let winner min-one-of players [ second evaluate-my-full-hand ]
+  ask winner [  set money money + total-pot ]
+  ask message-patch [ set plabel (word [name] of winner " wins") ]
+  set round-pot 0
+  set total-pot 0
 end
 
 to-report game-over?
   report not any? cards with [ not hidden? and not opp-can-see? and not player-can-see? ]
 end
 
-to step
-  ifelse not game-over? [
-    do-betting
-    ask players [ flip-random-card-up ]
-  ] [
-    ask players [ set label first evaluate-full-hand cards with [ owner = myself ] ]
+to-report step
+  set total-pot total-pot + round-pot
+  set round-pot 0
+  set current-bet 0
+  if game-over? [
+    complete-game
+    report false
   ]
+  do-betting
+  ask players [ flip-random-card-up ]
+  report true
 end
 
 to go
   reset-game
-
+  while [ step ] [ ]
 
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-210
+130
 10
-978
+898
 779
 -1
 -1
 40.0
 1
-24
+20
 1
 1
 1
@@ -245,10 +363,10 @@ ticks
 30.0
 
 BUTTON
+19
+10
+124
 55
-38
-121
-71
 NIL
 setup
 NIL
@@ -262,10 +380,10 @@ NIL
 1
 
 BUTTON
-57
-81
-120
-114
+19
+56
+124
+89
 NIL
 go
 NIL
@@ -279,12 +397,12 @@ NIL
 1
 
 BUTTON
-56
+20
+91
 125
-119
-158
+124
 NIL
-step
+show step
 NIL
 1
 T
@@ -294,6 +412,21 @@ NIL
 NIL
 NIL
 1
+
+SLIDER
+20
+127
+125
+160
+num-players
+num-players
+3
+5
+4.0
+1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -686,5 +819,5 @@ true
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
 @#$#@#$#@
-0
+1
 @#$#@#$#@
