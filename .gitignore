@@ -16,6 +16,7 @@ tmp/
 *~
 .#*
 \#*
+*.old
 
 # no jars, except these small ones
 *.jar
