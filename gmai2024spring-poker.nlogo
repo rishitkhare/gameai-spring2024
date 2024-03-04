@@ -1,5 +1,5 @@
-extensions [ csv py ]
-globals [ message-patch pot-patch deck ranks suits current-bet names game-complete? ]
+extensions [ csv py table ]
+globals [ message-patch pot-patch deck ranks suits current-bet names game-complete? data ]
 
 breed [ players player ]
 breed [ cards card ]
@@ -225,6 +225,7 @@ to reset-game
     ]
   ]
   ask chips [ set in-round? false ]
+  log-full-state "RESET"
 end
 
 to init-player
@@ -243,17 +244,38 @@ to init-player
   ]
 end
 
+to setup-logging
+  set data table:make
+end
+
+
+
+to export-log
+  file-open "poker.jsonl"
+  file-print table:to-json data
+  file-close
+  table:clear data
+end
+
+to reset-players
+  ask players [ die ]
+  ask chips [ die ]
+  set names shuffle [ "alice" "bob" "charlie" "danny" "elissa" ]
+  create-players num-players [  init-player  ]
+end
+
 to setup
   ca
-  setup-python
+  reset-ticks
+;  setup-python
+  setup-logging
   ask patches [ set pcolor white set plabel-color black ]
   set message-patch patch 0 min-pycor
   set pot-patch patch 0 1
   set-default-shape players "circle"
   set-default-shape cards "cardback"
   set-default-shape chips "wheel"
-  set names shuffle [ "alice" "bob" "charlie" "danny" "elissa" ]
-  create-players num-players [  init-player  ]
+  reset-players
   reset-game
 end
 
@@ -268,7 +290,7 @@ to bet-start
   let my-chips chips with [ owner = myself ]
   ask n-of random (count my-chips / 8) my-chips [ chip-bet ] ;; todo
   set bet? true
-  print (word name " bets: " bet)
+;  print (word name " bets: " bet)
 end
 
 to bet-call
@@ -284,11 +306,11 @@ to bet-call
       ]
     ]
   ]
-  print (word name " calls: " bet)
+;  print (word name " calls: " bet)
 end
 
 to bet-fold
-  print (word name " folds")
+;  print (word name " folds")
   set folded? true
   set bet 0
   ask chips with [ in-round? and owner = myself ] [
@@ -313,13 +335,12 @@ to bet-raise [ amount ]
       ask n-of amount chips with [owner = myself and not in-round?] [ ;; todo
         chip-bet
       ]
-      print (word name " raises: " bet)
+;      print (word name " raises: " bet)
     ] [
-      print (word name ": raised too much" )
+;      print (word name ": raised too much" )
       bet-call
     ]
   ]
-
 end
 
 to do-bet ;; player ;; TODO
@@ -340,6 +361,7 @@ to do-bet ;; player ;; TODO
       bet-start
     ]
   ]
+  log-full-state "BET"
 end
 
 to-report winning-player
@@ -352,6 +374,7 @@ end
 to complete-game
   ask players [ set label (word name ":\n" first evaluate-my-full-hand )]
   let winner winning-player
+  log-full-state "WIN"
   ask winner [
     ask chips with [ owner = pot-patch ] [
       set owner winner
@@ -359,6 +382,7 @@ to complete-game
       rt random 360 fd random-float 1
     ]
   ]
+
   ask chips [ set in-round? false ]
   ask message-patch [ set plabel (word [name] of winner " wins") ]
   set game-complete? true
@@ -367,6 +391,28 @@ end
 to-report game-over?
   report (not any? cards with [ not hidden? and not opp-can-see? and not player-can-see? ])
          or (2 > count players with [ not folded? ])
+end
+
+to-report player-state ;; player
+  report (list
+    name
+    ifelse-value (count cards with [ owner = myself ] >= 5) [ evaluate-my-full-hand ] [ "NO_CARDS" ]
+    bet
+    folded?
+    count chips with [owner = myself]
+    count chips with [owner = pot-patch]
+    [(list suit rank player-can-see? opp-can-see?)] of cards with [owner = myself]
+    )
+end
+
+to log-action [ action action-data ]
+  if logging? [
+    table:put data date-and-time (list action action-data)
+  ]
+end
+
+to log-full-state [ action ]
+  log-action action [player-state] of players
 end
 
 to reset-round
@@ -384,6 +430,8 @@ to reset-round
     rt random 360
     fd random-float 1.5
   ]
+  export-log
+  log-full-state "NEWROUND"
 end
 
 
@@ -405,8 +453,9 @@ to do-round
 end
 
 to go
+  tick
   ifelse game-complete? [
-    if count players with [ count chips with [ owner = myself ] > 2 ] < 2 [ stop ]
+    if count players with [ count chips with [ owner = myself ] > 2 ] < 2 [ reset-players ]
     reset-game
   ] [ ifelse game-over? [ complete-game ] [ do-round ] ]
 end
@@ -486,6 +535,17 @@ num-players
 1
 NIL
 HORIZONTAL
+
+SWITCH
+20
+175
+127
+208
+logging?
+logging?
+0
+1
+-1000
 
 @#$#@#$#@
 ## WHAT IS IT?
