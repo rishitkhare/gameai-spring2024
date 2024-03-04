@@ -12,11 +12,13 @@ tmp/
 # wildcards
 *.class
 *.tmp
+*.tmp.*
 *_managed/
 *~
 .#*
 \#*
 *.old
+*.ipynb_checkpoints
 
 # no jars, except these small ones
 *.jar
