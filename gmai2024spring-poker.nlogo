@@ -1,3 +1,4 @@
+extensions [ csv py ]
 globals [ message-patch pot-patch deck ranks suits current-bet names game-complete? ]
 
 breed [ players player ]
@@ -8,6 +9,15 @@ cards-own [ suit rank owner opp-can-see? player-can-see? ]
 players-own [ name bet bet? folded? called? raised? ]
 chips-own [ owner in-round? ]
 
+;;; PYTHON
+
+to setup-python
+  py:setup py:python
+  py:run "import tensorflow as tf"
+  py:run "import numpy as np"
+;  py:run "model = tf.keras.models.load_model('othello-discounted.keras')"
+;  py:run "print(model.summary())"
+end
 
 
 to-report second [multi-item-list]
@@ -235,6 +245,7 @@ end
 
 to setup
   ca
+  setup-python
   ask patches [ set pcolor white set plabel-color black ]
   set message-patch patch 0 min-pycor
   set pot-patch patch 0 1
