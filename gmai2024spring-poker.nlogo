@@ -411,6 +411,7 @@ to-report player-state ;; player
     set my-data lput (list "face_up_cards" ifelse-value not any? face-up-cards [ [] ] [[(list (first rank) suit)] of face-up-cards ])  my-data
     set my-data lput (list "face_player_cards" ifelse-value not any? face-player-cards [ [] ] [[(list (first rank) suit)] of face-player-cards ])  my-data
     set my-data lput (list "all_cards" [(list (first rank) suit)] of my-cards)  my-data
+    set my-data lput (list "handvalue" first evaluate-my-full-hand) my-data
   ]
   report table:to-json table:from-list my-data
 
