@@ -6,7 +6,7 @@ breed [ cards card ]
 breed [ chips chip ]
 
 cards-own [ suit rank owner opp-can-see? player-can-see? ]
-players-own [ name bet bet? folded? called? raised? ]
+players-own [ name bet bet? folded? called? raised? my-data ]
 chips-own [ owner in-round? ]
 
 ;;; PYTHON
@@ -229,6 +229,7 @@ to reset-game
 end
 
 to init-player
+  set folded? false
   set label-color black
   set name item (who mod num-players) names
   move-to pot-patch
@@ -245,16 +246,16 @@ to init-player
 end
 
 to setup-logging
-  set data table:make
+  set data []
 end
 
 
 
 to export-log
   file-open "poker.jsonl"
-  file-print table:to-json data
+  foreach data [ row -> file-print (word row) ]
+  set data []
   file-close
-  table:clear data
 end
 
 to reset-players
@@ -365,7 +366,8 @@ to do-bet ;; player ;; TODO
 end
 
 to-report winning-player
-   report min-one-of players with [not folded?] [
+  if not any? players [ report "NULL" ]
+  report min-one-of players with [not folded?] [
     (1000 * second evaluate-my-full-hand - third evaluate-my-full-hand)
   ]
 end
@@ -394,20 +396,46 @@ to-report game-over?
 end
 
 to-report player-state ;; player
-  report (list
-    name
-    ifelse-value (count cards with [ owner = myself ] >= 5) [ evaluate-my-full-hand ] [ "NO_CARDS" ]
-    bet
-    folded?
-    count chips with [owner = myself]
-    count chips with [owner = pot-patch]
-    [(list suit rank player-can-see? opp-can-see?)] of cards with [owner = myself]
-    )
+  let my-cards cards with [owner = myself and not hidden?]
+  set my-data []
+  set my-data lput (list "name" name) my-data
+  set my-data lput (list "bet" bet) my-data
+  set my-data lput (list "folded" folded?) my-data
+  if any? my-cards [
+    set my-data lput (list "round_winner_by_cards" [name] of winning-player)  my-data
+    set my-data lput  (list "chips" count chips with [owner = myself])  my-data
+    let face-down-cards my-cards with [not opp-can-see? and not player-can-see?]
+    let face-up-cards my-cards with [opp-can-see?]
+    let face-player-cards my-cards with [not opp-can-see? and player-can-see?]
+    set my-data lput (list "face_down_cards" ifelse-value not any? face-down-cards [ [] ] [[(list (first rank) suit)] of face-down-cards])  my-data
+    set my-data lput (list "face_up_cards" ifelse-value not any? face-up-cards [ [] ] [[(list (first rank) suit)] of face-up-cards ])  my-data
+    set my-data lput (list "face_player_cards" ifelse-value not any? face-player-cards [ [] ] [[(list (first rank) suit)] of face-player-cards ])  my-data
+    set my-data lput (list "all_cards" [(list (first rank) suit)] of my-cards)  my-data
+  ]
+  report table:to-json table:from-list my-data
+
+;  report (list
+;    name
+;    ifelse-value (count cards with [ owner = myself ] >= 5) [ evaluate-my-full-hand ] [ "NO_CARDS" ]
+;    bet
+;    folded?
+;    count chips with [owner = myself]
+;    count chips with [owner = pot-patch]
+;    [(list suit rank player-can-see? opp-can-see?)] of cards with [owner = myself]
+;    )
+end
+
+to-report join-list-as-string [ a-list ]
+  report reduce [[res x] -> (word res "," x)] a-list
+end
+
+to-report quote-string [ anything-stringable ]
+  report (word "\"" anything-stringable "\"")
 end
 
 to log-action [ action action-data ]
   if logging? [
-    table:put data date-and-time (list action action-data)
+    set data lput (list quote-string date-and-time "," quote-string action "," join-list-as-string action-data) data
   ]
 end
 
@@ -416,6 +444,7 @@ to log-full-state [ action ]
 end
 
 to reset-round
+  log-full-state "ENDROUND"
   set current-bet 0
   ask players [
     set called? false
@@ -431,7 +460,6 @@ to reset-round
     fd random-float 1.5
   ]
   export-log
-  log-full-state "NEWROUND"
 end
 
 
@@ -530,7 +558,7 @@ num-players
 num-players
 3
 5
-4.0
+3.0
 1
 1
 NIL
