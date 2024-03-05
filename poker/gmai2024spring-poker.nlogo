@@ -13,8 +13,12 @@ chips-own [ owner in-round? ]
 
 to setup-python
   py:setup py:python
-  py:run "import tensorflow as tf"
-  py:run "import numpy as np"
+  (py:run
+    "import tensorflow as tf"
+    "import numpy as np"
+    "import json"
+    "from mycode import *"
+  )
 ;  py:run "model = tf.keras.models.load_model('othello-discounted.keras')"
 ;  py:run "print(model.summary())"
 end
@@ -268,7 +272,7 @@ end
 to setup
   ca
   reset-ticks
-;  setup-python
+  setup-python
   setup-logging
   ask patches [ set pcolor white set plabel-color black ]
   set message-patch patch 0 min-pycor
@@ -353,8 +357,15 @@ to do-bet ;; player ;; TODO
       let current-max-bet max [bet] of bettors
       ifelse (current-max-bet > count my-chips) [ bet-fold ] [
         ;; YOU PUT SOMETHING HERE
+;        print visible-state self
+
+        (py:run
+          (word "raw_row = '" (list visible-state self) "'")
+          "row = json.loads(raw_row)"
+          "print('DATA TO PYTHON:', row)")
+        let a-choice py:runresult "get_best_choice(json.loads(raw_row))"
+        print (word "python choice: " a-choice)
         let my-choice random 10
-;        if my-choice = 0 [ bet-fold ]
         if my-choice = 0 [ bet-raise 1 ]
         if my-choice > 0 [ bet-call ]
       ]
@@ -395,24 +406,27 @@ to-report game-over?
          or (2 > count players with [ not folded? ])
 end
 
-to-report player-state ;; player
+to-report player-state [ omniscient? ] ;; player
   let my-cards cards with [owner = myself and not hidden?]
   set my-data []
   set my-data lput (list "name" name) my-data
   set my-data lput (list "bet" bet) my-data
-  set my-data lput (list "folded" folded?) my-data
+  set my-data lput (list "folded" ifelse-value folded? [ "True" ] [ "False" ]) my-data
   if any? my-cards [
-    set my-data lput (list "round_winner_by_cards" [name] of winning-player)  my-data
     set my-data lput  (list "chips" count chips with [owner = myself])  my-data
-    let face-down-cards my-cards with [not opp-can-see? and not player-can-see?]
     let face-up-cards my-cards with [opp-can-see?]
-    let face-player-cards my-cards with [not opp-can-see? and player-can-see?]
-    set my-data lput (list "face_down_cards" ifelse-value not any? face-down-cards [ [] ] [[(list (first rank) suit)] of face-down-cards])  my-data
     set my-data lput (list "face_up_cards" ifelse-value not any? face-up-cards [ [] ] [[(list (first rank) suit)] of face-up-cards ])  my-data
-    set my-data lput (list "face_player_cards" ifelse-value not any? face-player-cards [ [] ] [[(list (first rank) suit)] of face-player-cards ])  my-data
-    set my-data lput (list "all_cards" [(list (first rank) suit)] of my-cards)  my-data
-    set my-data lput (list "handvalue" first evaluate-my-full-hand) my-data
+    if (omniscient?) [
+      set my-data lput (list "round_winner_by_cards" [name] of winning-player)  my-data
+      let face-down-cards my-cards with [not opp-can-see? and not player-can-see?]
+      let face-player-cards my-cards with [not opp-can-see? and player-can-see?]
+      set my-data lput (list "face_down_cards" ifelse-value not any? face-down-cards [ [] ] [[(list (first rank) suit)] of face-down-cards])  my-data
+      set my-data lput (list "face_player_cards" ifelse-value not any? face-player-cards [ [] ] [[(list (first rank) suit)] of face-player-cards ])  my-data
+      set my-data lput (list "all_cards" [(list (first rank) suit)] of my-cards)  my-data
+      set my-data lput (list "handvalue" first evaluate-my-full-hand) my-data
+    ]
   ]
+;  print table:to-json table:from-list my-data
   report table:to-json table:from-list my-data
 
 ;  report (list
@@ -434,6 +448,8 @@ to-report quote-string [ anything-stringable ]
   report (word "\"" anything-stringable "\"")
 end
 
+
+
 to log-action [ action action-data ]
   if logging? [
     set data lput (list quote-string date-and-time "," quote-string action "," join-list-as-string action-data) data
@@ -441,7 +457,11 @@ to log-action [ action action-data ]
 end
 
 to log-full-state [ action ]
-  log-action action [player-state] of players
+  log-action action [ player-state true ] of players
+end
+
+to-report visible-state [ player-viewing ]
+  report (word quote-string date-and-time "," quote-string "VISIBLE" "," join-list-as-string ([player-state (self = player-viewing)] of players))
 end
 
 to reset-round
@@ -572,7 +592,7 @@ SWITCH
 208
 logging?
 logging?
-0
+1
 1
 -1000
 
