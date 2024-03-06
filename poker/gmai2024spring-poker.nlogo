@@ -1,5 +1,5 @@
 extensions [ csv py table ]
-globals [ message-patch pot-patch deck ranks suits current-bet names game-complete? data ]
+globals [ num-players message-patch pot-patch deck ranks suits current-bet names game-complete? data ]
 
 breed [ players player ]
 breed [ cards card ]
@@ -233,6 +233,7 @@ to reset-game
 end
 
 to init-player
+  set num-players 3
   set folded? false
   set label-color black
   set name item (who mod num-players) names
@@ -271,6 +272,7 @@ end
 
 to setup
   ca
+  set num-players 3
   reset-ticks
   setup-python
   setup-logging
@@ -363,11 +365,11 @@ to do-bet ;; player ;; TODO
           (word "raw_row = '" (list visible-state self) "'")
           "row = json.loads(raw_row)"
           "print('DATA TO PYTHON:', row)")
-        let a-choice py:runresult "get_best_choice(json.loads(raw_row))"
+        let a-choice int py:runresult "get_best_choice(json.loads(raw_row))"
         print (word "python choice: " a-choice)
-        let my-choice random 10
-        if my-choice = 0 [ bet-raise 1 ]
-        if my-choice > 0 [ bet-call ]
+        if a-choice > 0 [ bet-raise a-choice ]
+        if a-choice = 0 [ bet-call ]
+        if a-choice < 0 [ bet-fold ]
       ]
     ] [ ;; betting
       bet-start
@@ -570,21 +572,6 @@ NIL
 NIL
 1
 
-SLIDER
-20
-127
-125
-160
-num-players
-num-players
-3
-5
-3.0
-1
-1
-NIL
-HORIZONTAL
-
 SWITCH
 20
 175
@@ -595,6 +582,23 @@ logging?
 1
 1
 -1000
+
+BUTTON
+20
+90
+125
+123
+go once
+go
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
