@@ -5,7 +5,7 @@ import tensorflow as tf
 model = 0
 def init_if_necessary()
     if model == 0:
-        return load_model("mymodel.keras")
+        return tf.keras.models.load_model("mymodel.keras")
     return model
 
 def transmute(row):
