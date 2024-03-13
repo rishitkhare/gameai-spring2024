@@ -146,6 +146,8 @@ def parse_data(row_of_data):
 
 
 def get_best_choice(row_of_data):
+    import random
+    return random.choice([-3]*1 + [-2]*2 + [-1]*3 + [0] + [1]*3 + [2]*2 + [3]*1)
 
     "Calculates the best choice"
 
@@ -185,6 +187,57 @@ def get_best_choice(row_of_data):
     # return this number
     return ord(row_of_data[0][0])
 
+def convert_training_data():
+    # returns x, y
+    import json
+    with open('poker.jsonl', 'r') as file:
+        data = file.readlines()
+        data = [json.loads(x) for x in data]
+
+    # Understanding the data
+    if True:
+        for x in data:
+            players = x[2:]
+            players.sort(key=lambda x: x['name'])
+            print(x[1])
+            for player in players:
+                print(f"Player: {player['name']}, Chips: {player.get('chips', -1)} Bet: {player.get('bet', -1)} Folded: {player.get('folded', -1)}, round_winner_by_cards: {player.get('round_winner_by_cards', '')}")
+
+    player_chips = {}
+
+    # find first RESET
+    rst = [x for x in data if x[1] == 'RESET'][0]
+    for player in rst[2:]:
+        player_chips[player['name']] = player['chips']
+    print(player_chips)
+
+    while len(data) > 0:
+        content = data.pop(0)
+        if content[1] != 'BET':
+            continue
+
+        # found a bet, now capture all rounds in this game
+        game_data = [content]
+        while len(data) > 0 and data[0][1] == 'BET':
+            game_data.append(data.pop(0))
+                
+        content = data.pop(0)
+        if content[1] != 'WIN':
+            print('discarding game with no win, with #moves: ', len(game_data))
+            continue
+
+        winner = content[2]['round_winner_by_cards']
+
+        print("Accepting game with #moves: ", len(game_data), ' with winner: ', winner)
+
+
+        content = data.pop(0)
+        assert content[1] == 'ENDROUND'
+        content = data.pop(0)
+        assert content[1] == 'RESET'
+        
+        
+
 def build_model():
 
     """
@@ -219,3 +272,7 @@ def build_model():
     model.save("my_model.keras")
 
     print("SUMMARY", model.summary())
+
+
+if __name__ == '__main__':
+    convert_training_data()
