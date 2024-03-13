@@ -17,6 +17,59 @@ last_chips = -1
 #def transmute(row):
 #    return 7
 
+class Card:
+    def __init__(self, suit, value) -> None:
+        self.suit = {'spade': 1, 'club': 2, 'diamond': 3, 'heart': 4}[suit]
+        self.value = int(value)
+
+    def get_X_vector(self):
+        return [self.suit, self.value]
+
+empty_card = Card('spade', 0)
+empty_card.suit = 0
+
+
+class Player:
+    def __init__(self, bet, folded, chips, cards):
+        self.bet = bet; assert type(bet) is int; assert bet >= 0
+        self.folded = 1 if folded == 'True' else 0; assert type(folded) is str
+        self.chips = chips; assert type(chips) is int; assert chips >= 0
+        self.cards = cards;
+
+        assert type(cards) is list
+        for card in cards:
+            assert type(card) is Card
+
+    def get_X_vector(self):
+        output = [self.bet, self.folded, self.chips]
+        for card in self.cards:
+            output.extend(card.get_X_vector())
+        for _ in range(4 - len(self.cards)):
+            output.extend(empty_card.get_X_vector())
+        return output
+
+def get_additional_x_vector(player_card, hand_value):
+    return player_card.get_X_vector() + [hand_value]
+
+def get_X_vector(data):
+    # figure out who I am: p4
+    # sort the rest based on name.
+    # p1, p2, p3
+    players = []
+    # for each player:
+        # for each cards:
+            # create Card() and add to card_list
+        # create Player(..., card_list)
+        # players.append(above obj)
+    
+    # do the same for p4: me
+    # more = get_additional_x_vector(p4.cards, p4.hand_value)
+
+
+    # return [p1.get_X_vector(), p2.get_X_vector(), p3.get_X_vector(), p4.get_X_vector()] + more
+    # or something like this (flatten the list)
+    
+        
 
 def str_to_int(name):
     """Converts a string value to an associated integer"""
