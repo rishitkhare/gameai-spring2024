@@ -34,7 +34,7 @@ class Player:
         self.bet = bet; assert type(bet) is int; assert bet >= 0
         self.folded = 1 if folded == 'True' else 0; assert type(folded) is str
         self.chips = chips; assert type(chips) is int; assert chips >= 0
-        self.cards = cards;
+        self.cards = cards
 
         assert type(cards) is list
         for card in cards:
@@ -51,16 +51,20 @@ class Player:
 def get_additional_x_vector(player_card, hand_value):
     return player_card.get_X_vector() + [hand_value]
 
-def get_X_vector(data):
+
+
+def get_X_vector(row_of_data):
+    """Takes the data as passed by the game and formats it"""
+    
     # figure out who I am: p4
     # sort the rest based on name.
     # p1, p2, p3
-    players = []
+
     # for each player:
-        # for each cards:
-            # create Card() and add to card_list
-        # create Player(..., card_list)
-        # players.append(above obj)
+    # for each cards:
+        # create Card() and add to card_list
+    # create Player(..., card_list)
+    # players.append(above obj)
     
     # do the same for p4: me
     # more = get_additional_x_vector(p4.cards, p4.hand_value)
@@ -69,6 +73,40 @@ def get_X_vector(data):
     # return [p1.get_X_vector(), p2.get_X_vector(), p3.get_X_vector(), p4.get_X_vector()] + more
     # or something like this (flatten the list)
     
+
+    players_unsorted = []
+    my_player = -1
+
+    for data in row_of_data:
+        if(type(data) is dict):
+            # Throw away metadata like timestamp
+            if("round_winner_by_cards" in data):
+                my_player = data
+            else:
+                players_unsorted.append(data)
+    
+    players = sorted( players_unsorted, key=lambda player: str.casefold( player["name"] ) )
+
+    for player in players:
+            cards = []
+            for card in player["face_up_cards"]:
+                card_rank = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'jack': 11, 'queen': 12, 'king': 13}[card[0]]
+                cards.append(Card(value=card_rank, suit=card[1]))
+            
+            p = Player(folded=player["folded"], chips=player["chips"], cards=cards)
+
+    my_cards = []
+    for card in my_player["face_up_cards"]:
+        card_rank = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'jack': 11, 'queen': 12, 'king': 13}[card[0]]
+        my_cards.append(Card(value=card_rank, suit=card[1]))
+    
+    my_p = my_player(folded=my_player["folded"], chips=player["chips"], cards=cards)
+
+
+    my_player_extra_data = get_additional_x_vector(my_cards, my_player["handvalue"])
+
+    return [players[0].get_X_vector(), players[1].get_X_vector(), players[2].get_X_vector(), my_player.get_X_vector()] + my_player_extra_data
+
         
 
 def str_to_int(name):
