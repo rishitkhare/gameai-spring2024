@@ -20,7 +20,7 @@ last_chips = -1
 class Card:
     def __init__(self, suit, value) -> None:
         self.suit = {'spade': 1, 'club': 2, 'diamond': 3, 'heart': 4}[suit]
-        self.value = int(value)
+        self.value = {0: 0, 'ace': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'jack': 11, 'queen': 12, 'king': 13}[value]
 
     def get_X_vector(self):
         return [self.suit, self.value]
@@ -147,7 +147,7 @@ def parse_data(row_of_data):
 
 def get_best_choice(row_of_data):
     import random
-    return random.choice([-3]*1 + [-2]*2 + [-1]*3 + [0] + [1]*3 + [2]*2 + [3]*1)
+    return random.choice([0]*20 + [1]*5 + [2]*1 + [3]*1)
 
     "Calculates the best choice"
 
@@ -188,55 +188,144 @@ def get_best_choice(row_of_data):
     return ord(row_of_data[0][0])
 
 def convert_training_data():
+    training_data = ([], [])
+    def emit(
+        face_player_card, # state that only player knows
+        face_up_cards, # state that everyone knows about player
+        table_cards, # state of rest of the table.
+        player_chips, # my chips
+        action_taken, # action taken
+        y_score # Y to learn: how much did this action contribute to the win/loss
+    ):
+        # for now, just use the cards that a player has
+        cards = [Card(x[1], x[0]) for x in face_player_card + face_up_cards]
+        player = Player(int(action_taken.bet), 'True' if action_taken.folded else 'False', int(player_chips), cards)
+        training_data[0].append(player)
+        training_data[1].append(y_score)
+
+
     # returns x, y
     import json
     with open('poker.jsonl', 'r') as file:
         data = file.readlines()
+        data = list(filter(lambda x: len(x) > 0, (x.strip() for x in data)))
         data = [json.loads(x) for x in data]
 
     # Understanding the data
-    if True:
+    if False:
         for x in data:
             players = x[2:]
             players.sort(key=lambda x: x['name'])
             print(x[1])
             for player in players:
-                print(f"Player: {player['name']}, Chips: {player.get('chips', -1)} Bet: {player.get('bet', -1)} Folded: {player.get('folded', -1)}, round_winner_by_cards: {player.get('round_winner_by_cards', '')}")
+                pcards = len(player.get('face_up_cards', []))
+                print(f"Player: {player['name']}, Chips: {player.get('chips', -1)} Bet: {player.get('bet', -1)} Folded: {player.get('folded', -1)}, round_winner_by_cards: {player.get('round_winner_by_cards', '')}, #cards: {pcards}")
 
-    player_chips = {}
+    # How often was a default value used for the number of chips won/lost. This happens when a game is reset.
+    n_losers_default_picked = 0
+    n_winner_default_picked = 0
+    n_games = 0
 
-    # find first RESET
-    rst = [x for x in data if x[1] == 'RESET'][0]
-    for player in rst[2:]:
-        player_chips[player['name']] = player['chips']
-    print(player_chips)
+    while True:
+        # search for first reset
+        i = next((i for i, x in enumerate(data) if x[1] == 'RESET'), None)
+        if i is None:
+            print('no more resets, so stopping even though there are %d lines left' % len(data))
+            break
 
-    while len(data) > 0:
-        content = data.pop(0)
-        if content[1] != 'BET':
-            continue
+        chips = {}
+        rst = data[i]
+        for player in rst[2:]:
+            chips[player['name']] = player['chips']
 
-        # found a bet, now capture all rounds in this game
-        game_data = [content]
-        while len(data) > 0 and data[0][1] == 'BET':
-            game_data.append(data.pop(0))
-                
-        content = data.pop(0)
-        if content[1] != 'WIN':
-            print('discarding game with no win, with #moves: ', len(game_data))
-            continue
+        from collections import namedtuple
+        Action = namedtuple('Action', ['bet', 'folded'])
+        last_actions = {name: Action(0.0, False) for name in chips.keys()} # important for it to be 0.0 and not 0, because the parsed default json value is 0.0
 
-        winner = content[2]['round_winner_by_cards']
+        # search for first WIN
+        j = next((i for i, x in enumerate(data) if x[1] == 'WIN'), None)
+        if j is None:
+            print('no more wins, which is perhaps weird. stopping even though there are %d lines left' % len(data))
+            break
+        assert i < j, 'win happens before reset'
+        game_len = j - i
 
-        print("Accepting game with #moves: ", len(game_data), ' with winner: ', winner)
+        winner = data[j][2]['round_winner_by_cards']
+        # print('winner: ', winner)
 
+        # search for next reset after win to see how many chips were won.
+        k = next((i for i, x in enumerate(data) if x[1] == 'RESET' and winner in (x[2]['name'], x[3]['name'], x[4]['name']) and i > j), None)
+        if k is None:
+            print("presumably last game. stopping because can't find next reset. data left: ", len(data))
+            break
+        new_chips = list(filter(lambda x: x['name'] == winner, data[k][2:]))[0]['chips']
+        chips_won = new_chips - chips[winner]
+        if chips_won < 0:
+            chips_won = 8 # some default value because game was presumably reset
+            n_winner_default_picked += 1
 
-        content = data.pop(0)
-        assert content[1] == 'ENDROUND'
-        content = data.pop(0)
-        assert content[1] == 'RESET'
+        # find out how many chips were lost by each player
+        loser1, loser2 = [player['name'] for player in data[i][2:] if player['name'] != winner]
+
+        # do this by searching for the next reset where they appear.
+        k = next((i for i, x in enumerate(data) if x[1] == 'RESET' and loser1 in (x[2]['name'], x[3]['name'], x[4]['name']) and i > j), None)
+        if k is None:
+            loser1_chips = -4 # some default value
+            n_losers_default_picked += 1
+        else:
+            k = next((i for i, x in enumerate(data) if x[1] == 'RESET' and loser1 in (x[2]['name'], x[3]['name'], x[4]['name']) and i > j), None)
+            new_chips = list(filter(lambda x: x['name'] == loser1, data[k][2:]))[0]['chips']
+            loser1_chips = new_chips - chips[loser1]
+            if loser1_chips > 0:
+                loser1_chips = -4 # some default value because game was presumably reset
+                n_losers_default_picked += 1
+
+        k = next((i for i, x in enumerate(data) if x[1] == 'RESET' and loser2 in (x[2]['name'], x[3]['name'], x[4]['name']) and i > j), None)
+        if k is None:
+            loser2_chips = -4 # some default value
+            n_losers_default_picked += 1
+        else:
+            k = next((i for i, x in enumerate(data) if x[1] == 'RESET' and loser2 in (x[2]['name'], x[3]['name'], x[4]['name']) and i > j), None)
+            new_chips = list(filter(lambda x: x['name'] == loser2, data[k][2:]))[0]['chips']
+            loser2_chips = new_chips - chips[loser2]
+            if loser2_chips > 0:
+                loser2_chips = -4 # some default value because game was presumably reset
+                n_losers_default_picked += 1
+    
+        weights = {winner: chips_won, loser1: loser1_chips, loser2: loser2_chips}
+        for k in weights.keys():
+            weights[k] = weights[k] / game_len # kinda normalize? by game length
         
-        
+        for event in data[i:j]:
+            if event[1] != 'BET': continue
+            for player_descr in event[2:]:
+                potentially_new_action = Action(player_descr['bet'], player_descr['folded'])
+                assert type(potentially_new_action.bet) is float
+                if type(potentially_new_action.folded) != bool: # Hello, wtf?
+                    assert potentially_new_action.folded in ('True', 'False')
+                    potentially_new_action = potentially_new_action._replace(folded=potentially_new_action.folded == 'True')
+
+                if potentially_new_action != last_actions[player_descr['name']]:
+                    last_actions[player_descr['name']] = potentially_new_action
+                    emit(
+                        player_descr['face_player_cards'], # state that only player knows
+                        player_descr['face_up_cards'], # state that everyone knows about player
+                        set([tuple(x) for x in player_descr['all_cards']]) - set([tuple(x) for x in player_descr['face_up_cards']]), # state of rest of the table.
+                        player_descr['chips'], # my chips
+                        potentially_new_action, # action taken
+                        weights[player_descr['name']] # Y to learn: how much did this action contribute to the win/loss
+                    )
+
+
+        data = data[j+1:]
+        n_games += 1
+
+    print('n_games:', n_games)
+    print('n_losers_default_picked:', n_losers_default_picked)
+    print('n_winner_default_picked:', n_winner_default_picked)
+    print('training data size: ', len(training_data))
+    import pdb; pdb.set_trace()
+    return training_data
 
 def build_model():
 
@@ -275,4 +364,4 @@ def build_model():
 
 
 if __name__ == '__main__':
-    convert_training_data()
+   convert_training_data()
