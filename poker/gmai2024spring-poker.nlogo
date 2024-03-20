@@ -364,9 +364,10 @@ to do-bet ;; player ;; TODO
         (py:run
           (word "raw_row = '" (list visible-state self) "'")
           "row = json.loads(raw_row)"
-          "print('DATA TO PYTHON:', row)")
+;          "print('DATA TO PYTHON:', row)"
+        )
         let a-choice int py:runresult "get_best_choice(json.loads(raw_row))"
-        print (word "python choice: " a-choice)
+        ;print (word "python choice: " a-choice)
         if a-choice > 0 [ bet-raise a-choice ]
         if a-choice = 0 [ bet-call ]
         if a-choice < 0 [ bet-fold ]
@@ -579,7 +580,7 @@ SWITCH
 208
 logging?
 logging?
-1
+0
 1
 -1000
 
