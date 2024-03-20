@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow import keras
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -13,9 +14,6 @@ last_chips = -1
 #    if model == 0:
 #        return tf.keras.models.load_model("mymodel.keras")
 #    return model
-
-#def transmute(row):
-#    return 7
 
 class Card:
     def __init__(self, suit, value) -> None:
@@ -144,12 +142,12 @@ def parse_data(row_of_data):
     return tf.convert_to_tensor(temp_array,dtype=tf.int32), chips
     
 
-
+# TODO: Change this from random choice to instead use model to make decision
 def get_best_choice(row_of_data):
     import random
     return random.choice([0]*20 + [1]*5 + [2]*1 + [3]*1)
 
-    "Calculates the best choice"
+    """Calculates the best choice"""
 
     X, chips = parse_data(row_of_data)
 
@@ -212,14 +210,13 @@ def convert_training_data():
         data = [json.loads(x) for x in data]
 
     # Understanding the data
-    if False:
-        for x in data:
-            players = x[2:]
-            players.sort(key=lambda x: x['name'])
-            print(x[1])
-            for player in players:
-                pcards = len(player.get('face_up_cards', []))
-                print(f"Player: {player['name']}, Chips: {player.get('chips', -1)} Bet: {player.get('bet', -1)} Folded: {player.get('folded', -1)}, round_winner_by_cards: {player.get('round_winner_by_cards', '')}, #cards: {pcards}")
+    # for x in data:
+    #     players = x[2:]
+    #     players.sort(key=lambda x: x['name'])
+    #     print(x[1])
+    #     for player in players:
+    #         pcards = len(player.get('face_up_cards', []))
+    #         print(f"Player: {player['name']}, Chips: {player.get('chips', -1)} Bet: {player.get('bet', -1)} Folded: {player.get('folded', -1)}, round_winner_by_cards: {player.get('round_winner_by_cards', '')}, #cards: {pcards}")
 
     # How often was a default value used for the number of chips won/lost. This happens when a game is reset.
     n_losers_default_picked = 0
@@ -324,44 +321,79 @@ def convert_training_data():
     print('n_losers_default_picked:', n_losers_default_picked)
     print('n_winner_default_picked:', n_winner_default_picked)
     print('training data size: ', len(training_data))
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     return training_data
 
 def build_model():
 
     """
-    Still in the work, builds the model based off of the data
+    Constructs a completely new model, using data to train. (WARNING: WILL OVERWRITE OLD MODEL FILE! BE CAREFUL)
     """
 
-    foo = tf.keras.models.load_model('my_model.keras')
-    foo.summary()
-
-    x = pd.read_csv("./x.csv")
-    y = pd.read_csv("./y.csv")
-    x_train, x_test, y_train, y_test = train_test_split(x.to_numpy(), y.to_numpy(), test_size=0.33)
-
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.Dense(64),
-        # tf.keras.layers.Dense(128),
-        # tf.keras.layers.Dense(256),
-        # tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dense(256, activation='relu'),
-        # tf.keras.layers.Dropout(0.1),
-        tf.keras.layers.Dense(2)
+    # init topo of NN
+    poker_nn = keras.Sequential([
+        keras.layers.Dense(64, activation='sigmoid'),
+        keras.layers.Dense(128, activation='relu'),
+        keras.layers.Dense(64, activation='relu'),
+        keras.layers.Dense(1, activation='relu')
     ])
 
-    loss_fn = tf.keras.losses.MeanAbsoluteError() #BinaryFocalCrossentropy(from_logits=True)
-    model.compile(optimizer='adam',
+    # print("SUMMARY", poker_nn.summary())
+
+    # since we are getting a probability from 0, 1
+    # of winning this round, we will use BinaryCrossEntropy
+    print("compiling model...")
+    loss_fn = keras.losses.BinaryCrossentropy()
+    poker_nn.compile(optimizer='adam',
                 loss=loss_fn,
-                metrics=tf.keras.metrics.MeanSquaredError())
-    
-    model.fit(x_train, y_train, epochs=100)
+                metrics=loss_fn)
 
-    model.evaluate(x_test,  y_test, verbose=2)
-    model.save("my_model.keras")
+    # At this point we need to use our data to train the model!
+    # We will split data into: x_train y_train (data, expected result),
+    # and x_test, y_test (data_expected result)
 
-    print("SUMMARY", model.summary())
+    # training data will be used to adjust NN parameters, but the testing data
+    # will be used to check the efficacy of the training (we will NOT fit the model
+    # to this data whatsoever!)
+
+    print("parsing training data...")
+    # TODO: Use other methods to parse data into training vectors...
+    converted_training_data = convert_training_data()
+
+    full_x = np.array(converted_training_data[0])
+    full_y = np.array(converted_training_data[1])
+
+    # Note from Rishu: I am not entirely certain what convert_training_data() returns...
+    # It appears to be returning a 1D array. What format is this array in...?
+
+    np.array(list(map(, x)))
+    print("x d-type:")
+    print((full_x).dtype)
+    print("x shape:")
+    print(full_x.shape)
+
+    print("y d-type:")
+    print((full_y).dtype)
+    print("y shape:")
+    print(full_y.shape)
+
+    x_train = None
+    y_train = None
+    x_test = None
+    y_test = None
+
+    if(x_train == None):
+        print("implementation not complete. need to obtain training data first!")
+        return
+
+    # train the model using the data for 100 epochs
+    poker_nn.fit(x_train, y_train, epochs=100)
+
+    poker_nn.evaluate(x_test,  y_test, verbose=2)
+    poker_nn.save("my_model.keras")
+
+    print("SUMMARY", poker_nn.summary())
 
 
 if __name__ == '__main__':
-   convert_training_data()
+   build_model()
